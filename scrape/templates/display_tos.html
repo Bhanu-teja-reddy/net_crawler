@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h2>ToS for {{ url }}</h2>
+    <p>{{ tos.tos }}</p>
+    <p>Last updated: {{ tos.timestamp }}</p>
+    <a href="/">Back</a>
+</div>
+{% endblock %}

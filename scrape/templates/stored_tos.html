@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+
+{% block content %}
+<div class="container">
+    <h1>Stored ToS Records</h1>
+    {% for url, data in tos_data.items() %}
+        <div>
+            <h3><a href="{{ url }}">{{ url }}</a></h3>
+            <p>{{ data.tos }}</p>
+            <p>Accessed on: {{ data.timestamp }}</p>
+        </div>
+    {% else %}
+        <p>No ToS records found.</p>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,9 @@
+body {
+    padding-top: 20px;
+}
+.tos-display, .tos-record {
+    border: 1px solid #dee2e6;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 20px;
+}
