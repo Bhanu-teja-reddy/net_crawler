@@ -1,12 +1,48 @@
-from flask import Flask, render_template, request, url_for, redirect
+from flask import Flask, render_template, request, url_for, redirect , jsonify
+from urllib.robotparser import RobotFileParser
 from scraper import scrape_tos
 from datetime import datetime
+import mysql.connector
 import json
 
 app = Flask(__name__, template_folder=r'C:\Users\bhanu\Desktop\net_crawler\scrape\templates')
 
-def save_tos_data(url, tos_text):
-    
+db_config = {
+    'user': 'root',
+    'password': 'mysql',
+    'host': '127.0.0.1:3306',
+    'database': 'tosdatabase'
+}
+
+def get_db_connection():
+    """Establish a connection to the database."""
+    return mysql.connector.connect(**db_config)
+
+
+@app.route('/')
+def home():
+    """Render the homepage."""
+    return render_template('index.html')
+
+def is_allowed_to_scrape(url):
+    """Check if scraping the URL is allowed by robots.txt."""
+    robot_parser = RobotFileParser()
+    robot_parser.set_url(url + '/robots.txt')
+    robot_parser.read()
+    return robot_parser.can_fetch("*", url)
+
+@app.route('/scrape', methods=['POST'])
+def scrape():
+    url = request.form['url']
+    if url:
+        if is_allowed_to_scrape(url):
+            data = scrape_tos(url)
+            return jsonify({"status": "success", "data": data}), 200
+        else:
+            return jsonify({"status": "error", "message": "Scraping this URL is disallowed by robots.txt"}), 403
+    return jsonify({"status": "error", "message": "URL is required"}), 400
+
+def save_tos_data(url, tos_text):    
     data = {
         "tos": tos_text,
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
