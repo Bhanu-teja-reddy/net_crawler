@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+
+{% block title %}ToS Details{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Terms of Service Details</h1>
+    <h3>{{ entry['url'] }}</h3>
+    <p><strong>Scraped on:</strong> {{ entry['date_recorded'] }}</p>
+    <div class="tos-content">
+        {{ entry['content'] }}
+    </div>
+    <a href="{{ url_for('stored_tos') }}" class="btn btn-primary mt-3">Back to Stored ToS Data</a>
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+<!-- Inside archive_tos.html -->
+{% for archive in archives %}
+    <div>
+        <strong>Website:</strong> <a href="{{ archive.url }}">{{ archive.url }}</a><br>
+        <strong>Archived on:</strong> {{ archive.date_recorded }}<br>
+        <a href="{{ url_for('archive_details', archive_id=archive.archive_id) }}">View Content</a>
+    </div>
+{% endfor %}

@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+
+{% block title %}Stored ToS Data{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1>Stored Terms of Service Data</h1>
+    {% for entry in tos_entries %}
+    <div class="card mb-3">
+        <div class="card-header">
+            <a href="{{ url_for('tos_details', tos_id=entry.tos_id) }}">Website: {{ entry.url }}</a>
+        </div>
+        <div class="card-body">
+            <p class="card-text small">{{ entry.content[:300] }}...</p>
+            <p class="card-text"><small class="text-muted">Recorded on: {{ entry.date_recorded }}</small></p>
+        </div>
+    </div>
+    {% else %}
+    <p>No terms of service data stored yet.</p>
+    {% endfor %}
+</div>
+{% endblock %}

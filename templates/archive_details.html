@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archived ToS Details</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+    <h1>Archived Terms of Service Details</h1>
+    <div class="content">
+        <h2>Website URL: {{ entry.url }}</h2>
+        <p><strong>Date Recorded:</strong> {{ entry.date_recorded }}</p>
+        <p><strong>Content Hash:</strong> {{ entry.content_hash }}</p>
+        <div>
+            <h3>Content:</h3>
+            <p>{{ entry.content }}</p>
+        </div>
+        <a href="{{ url_for('archive_tos') }}">Back to Archive List</a>
+    </div>
+</body>
+</html>
