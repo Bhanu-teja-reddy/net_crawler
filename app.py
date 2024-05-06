@@ -7,7 +7,6 @@ import requests
 
 app = Flask(__name__)
 
-# MySQL configurations
 app.config['MYSQL_HOST'] = '127.0.0.1'
 app.config['MYSQL_USER'] = 'root'
 app.config['MYSQL_PASSWORD'] = 'mysql'
@@ -20,22 +19,37 @@ mysql = MySQL(app)
 def home():
     return render_template('home.html')
 
-@app.route('/stored_tos')
+@app.route('/stored_tos', methods=['GET', 'POST'])
 def stored_tos():
+    search_query = ''
     cursor = mysql.connection.cursor()
-    cursor.execute("""
-        SELECT terms_of_service.tos_id, websites.url, terms_of_service.content, terms_of_service.date_recorded
-        FROM terms_of_service
-        JOIN websites ON terms_of_service.website_id = websites.website_id
-    """)
-    stored_tos_entries = cursor.fetchall()
+    
+    if request.method == 'POST':
+        search_query = request.form.get('search', '')
+        cursor.execute("""
+            SELECT terms_of_service.tos_id, websites.url, terms_of_service.content, terms_of_service.date_recorded
+            FROM terms_of_service
+            JOIN websites ON terms_of_service.website_id = websites.website_id
+            WHERE websites.url LIKE %s OR terms_of_service.content LIKE %s
+            ORDER BY terms_of_service.date_recorded DESC
+        """, ('%' + search_query + '%', '%' + search_query + '%'))
+    else:
+        cursor.execute("""
+            SELECT terms_of_service.tos_id, websites.url, terms_of_service.content, terms_of_service.date_recorded
+            FROM terms_of_service
+            JOIN websites ON terms_of_service.website_id = websites.website_id
+            ORDER BY terms_of_service.date_recorded DESC
+        """)
+
+    tos_entries = cursor.fetchall()
     cursor.close()
-    return render_template('stored_tos.html', tos_entries=stored_tos_entries)
+    return render_template('stored_tos.html', tos_entries=tos_entries, search_query=search_query)
 
 @app.route('/archive_tos', methods=['GET', 'POST'])
 def archive_tos():
     message = ''
-    archived_tos_entries = []  # Initialize as empty list to handle cases where no data is fetched
+    search_query = request.args.get('search', default='')
+    archived_tos_entries = []
 
     if request.method == 'POST':
         tos_id = request.form.get('tos_id')
@@ -47,10 +61,9 @@ def archive_tos():
             tos_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
             cursor = mysql.connection.cursor()
 
-            # Check if the hash exists in the archive table
+         
             cursor.execute("SELECT content_hash FROM archive_tos WHERE content_hash = %s", (tos_hash,))
             if cursor.fetchone() is None:
-                # If not, insert it into the archive table
                 cursor.execute("""
                     INSERT INTO archive_tos (tos_id, content, content_hash, date_recorded)
                     VALUES (%s, %s, %s, NOW())
@@ -61,107 +74,131 @@ def archive_tos():
                 message = 'Content is already archived.'
 
             cursor.close()
-
-    # Fetch all archive entries regardless of the POST method result
+    
     cursor = mysql.connection.cursor()
-    cursor.execute("""
+
+
+    sql_query = """
         SELECT at.archive_id, at.date_recorded, at.content_hash, ts.content as terms_content, w.url
         FROM archive_tos at
         JOIN terms_of_service ts ON at.tos_id = ts.tos_id
         JOIN websites w ON ts.website_id = w.website_id
-    """)
+        ORDER BY at.date_recorded DESC
+    """
+
+    if search_query: 
+        sql_query += " WHERE w.url LIKE %s OR ts.content LIKE %s ORDER BY at.date_recorded DESC"
+        search_like = f"%{search_query}%"
+        cursor.execute(sql_query, (search_like, search_like))
+    else:
+        cursor.execute(sql_query)
+
     archived_tos_entries = cursor.fetchall()
     cursor.close()
     
-    return render_template('archive_tos.html', archives=archived_tos_entries, message=message)
-
-
+    return render_template('archive_tos.html', archives=archived_tos_entries, message=message, search_query=search_query)
 
 @app.route('/submit_url', methods=['POST'])
 def submit_url():
     url = request.form['url']
+    tos_id = request.form.get('tos_id')
     message = 'No Terms of Service processed.'
     tos_text = get_tos_content(url)
     current_time = datetime.now()
     cursor = mysql.connection.cursor()
     
-    # Check if the website already exists and retrieve its ID
+
     cursor.execute("SELECT website_id FROM websites WHERE url = %s", (url,))
     website_row = cursor.fetchone()
     
     if website_row:
         website_id = website_row['website_id']
-        # Update the last scraped time
-        cursor.execute("UPDATE websites SET last_scraped = %s WHERE website_id = %s", (current_time, website_id))
     else:
-        # Insert the new website and get the new website_id
+ 
         cursor.execute("INSERT INTO websites (url, last_scraped) VALUES (%s, %s)", (url, current_time))
         website_id = cursor.lastrowid
-        
+
+    cursor.execute("UPDATE websites SET last_scraped = %s WHERE website_id = %s", (current_time, website_id))
     mysql.connection.commit()
     
     if tos_text:
         tos_hash = hashlib.sha256(tos_text.encode('utf-8')).hexdigest()
-        # Fetch existing terms of service entry
-        cursor.execute("SELECT tos_id, content, content_hash FROM terms_of_service WHERE website_id = %s", (website_id,))
-        existing = cursor.fetchone()
-    
-        if existing:
-            current_tos_id = existing['tos_id']
-            current_content = existing['content']
-            current_hash = existing['content_hash']
 
-            # Archive previous content if hash is different
-            if tos_hash != current_hash:
-                cursor.execute("""
-                    INSERT INTO archive_tos (tos_id, content, content_hash, date_recorded)
-                    VALUES (%s, %s, %s, NOW())
-                """, (current_tos_id, current_content, current_hash))
+        if tos_id:
+            cursor.execute("SELECT content, content_hash FROM terms_of_service WHERE tos_id = %s", (tos_id,))
+            existing = cursor.fetchone()
+            if existing and existing['content_hash'] != tos_hash:
+                cursor.execute("INSERT INTO archive_tos (tos_id, content, content_hash, date_recorded) VALUES (%s, %s, %s, %s)",
+                               (tos_id, existing['content'], existing['content_hash'], current_time))
+                mysql.connection.commit()
+                cursor.execute("UPDATE terms_of_service SET content = %s, content_hash = %s, date_recorded = %s WHERE tos_id = %s",
+                               (tos_text, tos_hash, current_time, tos_id))
                 mysql.connection.commit()
                 message = 'Terms of Service content has changed and the previous version was archived.'
-
-            # Update existing Terms of Service entry
-            cursor.execute("""
-                UPDATE terms_of_service SET content = %s, content_hash = %s, date_recorded = %s
-                WHERE tos_id = %s
-            """, (tos_text, tos_hash, current_time, current_tos_id))
-            mysql.connection.commit()
+            else:
+                message = 'No changes detected in Terms of Service.'
         else:
-            # Insert new Terms of Service entry
-            cursor.execute("""
-                INSERT INTO terms_of_service (website_id, content, content_hash, date_recorded)
-                VALUES (%s, %s, %s, %s)
-            """, (website_id, tos_text, tos_hash, current_time))
-            message = 'Terms of Service saved successfully!'
-        mysql.connection.commit()
+            cursor.execute("INSERT INTO terms_of_service (website_id, content, content_hash, date_recorded) VALUES (%s, %s, %s, %s)",
+                           (website_id, tos_text, tos_hash, current_time))
+            mysql.connection.commit()
+            message = 'New Terms of Service saved successfully!'
     else:
-        message = 'Terms of Service not found.'
+        message = 'Failed to retrieve Terms of Service from the URL provided.'
 
     cursor.close()
     return render_template('scrape_result.html', url=url, content=tos_text if tos_text else '', time_scraped=current_time, message=message)
 
 
-@app.route('/tos_details/<int:tos_id>')
+@app.route('/tos_details/<int:tos_id>', methods=['GET', 'POST'])
 def tos_details(tos_id):
     cursor = mysql.connection.cursor()
-    cursor.execute("SELECT * FROM terms_of_service WHERE tos_id = %s", (tos_id,))
+    message = ""
+
+    if request.method == 'POST':
+        action = request.form.get('action')
+        note = request.form.get('note', '')
+
+        if action == 'update':
+            cursor.execute("UPDATE terms_of_service SET notes = %s WHERE tos_id = %s", (note, tos_id))
+            message = "Note updated successfully!"
+        elif action == 'delete':
+            cursor.execute("UPDATE terms_of_service SET notes = NULL WHERE tos_id = %s", (tos_id,))
+            message = "Note deleted successfully!"
+        mysql.connection.commit()
+
+    cursor.execute("""
+        SELECT ts.tos_id, ts.content, ts.date_recorded, w.url, ts.notes
+        FROM terms_of_service ts
+        JOIN websites w ON ts.website_id = w.website_id
+        WHERE ts.tos_id = %s
+    """, (tos_id,))
     entry = cursor.fetchone()
     cursor.close()
+
     if entry:
-        return render_template('tos_details.html', entry=entry)
+        return render_template('tos_details.html', entry=entry, message=message)
     else:
         return "ToS entry not found.", 404
+
     
 @app.route('/archive_details/<int:archive_id>')
 def archive_details(archive_id):
     cursor = mysql.connection.cursor()
-    cursor.execute("SELECT * FROM archive_tos WHERE archive_id = %s", (archive_id,))
-    archive_entry = cursor.fetchone()
+    cursor.execute("""
+        SELECT at.archive_id, at.date_recorded, at.content_hash, at.content, w.url
+        FROM archive_tos at
+        JOIN terms_of_service ts ON at.tos_id = ts.tos_id
+        JOIN websites w ON ts.website_id = w.website_id
+        WHERE at.archive_id = %s
+    """, (archive_id,))
+    entry = cursor.fetchone()
     cursor.close()
-    if archive_entry:
-        return render_template('archive_details.html', entry=archive_entry)
+    
+    if entry:
+        return render_template('archive_details.html', entry=entry)
     else:
         return "Archived ToS entry not found.", 404
+
 
 
 def can_scrape_site(url):
@@ -176,7 +213,6 @@ def can_scrape_site(url):
         lines = response.text.splitlines()
         for line in lines:
             if line.startswith('User-agent: *'):
-                # Start recording rules for all bots
                 for rule in lines[lines.index(line):]:
                     if rule.startswith('Disallow: '):
                         disallowed_path = rule.split(' ')[1].strip()
@@ -184,7 +220,7 @@ def can_scrape_site(url):
                             return False
         return True
     except requests.RequestException:
-        return False  # Assume false if there's any issue retrieving the robots.txt
+        return False
     
 if __name__ == '__main__':
     app.run(debug=True)

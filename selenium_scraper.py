@@ -13,16 +13,17 @@ def init_driver(headless=True):
     options = Options()
     options.headless = headless
     options.add_argument("--enable-javascript")
-    options = Options()
     options.add_argument("--ignore-certificate-errors")
-    # Ensure the executable_path is set to the location of your WebDriver if not in PATH
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
+    options.add_argument("--enable-javascript")
+    options.add_argument("--ignore-certificate-errors")
     return webdriver.Chrome(options=options)
 
 def find_terms_link(element):
     """Function to locate a terms of service link using various criteria."""
     text = element.get_attribute('innerText')
     href = element.get_attribute('href')
-    # Regular expression to match different common terms of service texts
     terms_patterns = [
         'terms of service', 'terms and conditions', 'terms & conditions',
         'terms', 'terms of use',
@@ -34,9 +35,7 @@ def is_terms_of_service_page(content):
     """Check if the current page is likely the Terms of Service page."""
     soup = BeautifulSoup(content, 'html.parser')
     time.sleep(5)
-    # Define the headers you expect 'Terms of Service' might appear in
     headers = ['h1', 'h2', 'h3']
-    # Look for the text in the headers
     for header in headers:
          if soup.find(header, string=lambda text: text and "terms of service" in text):
              
@@ -51,25 +50,27 @@ def navigate_to_tos(driver, url):
     driver.get(url)
     initial_page_source = driver.page_source
     
+    cookies = driver.get_cookies()
+    for cookie in cookies:
+        driver.add_cookie(cookie)
+        
     if is_terms_of_service_page(initial_page_source):
         print("Already on the Terms of Service page.")
         return initial_page_source
     else:
         try:
-            # Attempt to find the Terms of Service link within common locations first
             footer_links = driver.find_elements(By.CSS_SELECTOR, 'footer a')
             terms_link = next((link for link in footer_links if find_terms_link(link)), None)
             
             if terms_link:
                 terms_link.click()
             else:
-                # Fall back to searching the whole page if not found in the footer
                 all_links = driver.find_elements(By.TAG_NAME, 'a')
                 terms_link = next((link for link in all_links if find_terms_link(link)), None)
                 if terms_link:
                     terms_link.click()
             
-            # Wait for the page to load after clicking
+           
             WebDriverWait(driver, 10)
             return driver.page_source
 
@@ -83,7 +84,7 @@ def navigate_to_tos(driver, url):
 
 def get_tos_content(url):
     """Public function to get Terms of Service content."""
-    driver = init_driver(headless=True)  # Set headless to False if you want to see the browser
+    driver = init_driver(headless=True)
     try:
         page_source = navigate_to_tos(driver, url)
         if page_source:
@@ -95,13 +96,28 @@ def get_tos_content(url):
         driver.quit()
 
 def get_text_from_tos_page(content):
-    """Extract all text from the Terms of Service page."""
+    """Extract all text from the Terms of Service page after the 'Terms of Service' header."""
     soup = BeautifulSoup(content, 'html.parser')
-    return soup.get_text()
+
+   
+    pattern = re.compile(r"terms of service", re.IGNORECASE)
+    tos_header = soup.find(lambda tag: tag.name in ['h1', 'h2', 'h3'] and pattern.search(tag.get_text()))
+
+    if tos_header:
+        content = []
+        element = tos_header.find_next()
+        while element:
+            if element.name in ['h1']:
+                break 
+            if element.get_text(strip=True):
+                content.append(element.get_text(strip=True))
+            element = element.find_next()
+        return '\n'.join(content)
+    else:
+        return "Terms of Service section not found."
 
 if __name__ == '__main__':
-    # Test the function with a URL
-    url = 'https://www.indeed.com'
+    url = 'https://www.tripadvisor.com/'
     tos_text = get_tos_content(url)
     if tos_text:
         print(tos_text)
